@@ -1,0 +1,24 @@
+name: glorfeed-topic-service-local
+
+services:
+  postgres:
+    image: postgres:18.1
+    container_name: glorfeed-topic-service-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LOCAL_DB_USER}
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD}
+      POSTGRES_DB: glorfeed_topic
+      PGDATA: /var/lib/postgresql/18/docker
+    ports:
+      - "54321:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d glorfeed_topic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:

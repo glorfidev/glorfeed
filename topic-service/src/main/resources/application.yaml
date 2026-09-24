@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: topic-service
+  datasource:
+    url: ${TOPIC_DB_URL}
+    username: ${TOPIC_DB_USER}
+    password: ${TOPIC_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
