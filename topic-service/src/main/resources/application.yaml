@@ -10,3 +10,10 @@ spring:
       ddl-auto: validate
     open-in-view: false
 
+logging:
+  config: classpath:logging/logback-spring.xml
+  graylog:
+    enabled: ${GRAYLOG_ENABLED:false}
+    host: ${GRAYLOG_HOST:127.0.0.1}
+    port: ${GRAYLOG_PORT:12201}
+    source: topic-service

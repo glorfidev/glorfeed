@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <springProperty scope="context" name="graylogEnabled" source="logging.graylog.enabled" defaultValue="false"/>
+    <springProperty scope="context" name="graylogHost" source="logging.graylog.host" defaultValue="127.0.0.1"/>
+    <springProperty scope="context" name="graylogPort" source="logging.graylog.port" defaultValue="12201"/>
+    <springProperty scope="context" name="graylogSource" source="logging.graylog.source" defaultValue="topic-service"/>
+
+    <condition class="ch.qos.logback.core.boolex.PropertyEqualityCondition">
+        <key>graylogEnabled</key>
+        <value>true</value>
+    </condition>
+    <if>
+        <then>
+            <appender name="GELF" class="de.siegmar.logbackgelf.GelfTcpAppender">
+                <graylogHost>${graylogHost}</graylogHost>
+                <graylogPort>${graylogPort}</graylogPort>
+                <encoder class="de.siegmar.logbackgelf.GelfEncoder">
+                    <originHost>${graylogSource}</originHost>
+                </encoder>
+            </appender>
+            <appender name="ASYNC_GELF" class="ch.qos.logback.classic.AsyncAppender">
+                <appender-ref ref="GELF"/>
+                <discardingThreshold>0</discardingThreshold>
+                <neverBlock>true</neverBlock>
+            </appender>
+            <root level="INFO">
+                <appender-ref ref="CONSOLE"/>
+                <appender-ref ref="ASYNC_GELF"/>
+            </root>
+        </then>
+        <else>
+            <root level="INFO">
+                <appender-ref ref="CONSOLE"/>
+            </root>
+        </else>
+    </if>
+</configuration>

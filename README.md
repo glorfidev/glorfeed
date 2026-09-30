@@ -25,6 +25,12 @@ TOPIC_DB_USER=glorfeed
 TOPIC_DB_PASSWORD=<the value of LOCAL_DB_PASSWORD in .env>
 ```
 
+To also send logs to the local Graylog GELF TCP input, add
+`GRAYLOG_ENABLED=true` to the IntelliJ run configuration. The default
+destination is `127.0.0.1:12201`; override it with `GRAYLOG_HOST` and
+`GRAYLOG_PORT` when needed. Console logging remains enabled even when Graylog
+is unavailable.
+
 Stop the local database while preserving its data:
 
 ```bash
