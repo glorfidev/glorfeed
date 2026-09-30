@@ -34,3 +34,32 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/glorfeed-topic-service:latest
             ghcr.io/${{ github.repository_owner }}/glorfeed-topic-service:${{ github.sha }}
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      TOPIC_SERVICE_IMAGE: ghcr.io/${{ github.repository_owner }}/glorfeed-topic-service:${{ github.sha }}
+      GHCR_USERNAME: ${{ github.actor }}
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
+      packages: read
+    steps:
+      - name: Deploy topic service to Hetzner
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: DB_PASSWORD,TOPIC_SERVICE_IMAGE,GHCR_USERNAME,GHCR_TOKEN
+          script: |
+            set -eu
+            cd /opt/glorfindela
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            docker compose -f docker-compose.prod.yml pull topic-service
+            docker compose -f docker-compose.prod.yml up -d --no-deps topic-service
+            docker logout ghcr.io
+
+
