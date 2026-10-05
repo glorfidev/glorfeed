@@ -5,6 +5,8 @@ services:
     image: postgres:18.1
     container_name: glorfeed-topic-service-postgres-local
     restart: unless-stopped
+    # Debezium reads outbox inserts through PostgreSQL logical decoding.
+    command: ["postgres", "-c", "wal_level=logical"]
     environment:
       POSTGRES_USER: ${LOCAL_DB_USER}
       POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD}
@@ -14,6 +16,10 @@ services:
       - "54321:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
+    networks:
+      glorfeed:
+        aliases:
+          - topic-postgres
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d glorfeed_topic"]
       interval: 5s
@@ -22,3 +28,8 @@ services:
 
 volumes:
   postgres_data:
+
+networks:
+  glorfeed:
+    external: true
+    name: glorfeed-local-network
