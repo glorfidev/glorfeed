@@ -1,4 +1,3 @@
-{$GLORFEED_DOMAIN} {
-    encode zstd gzip
+feed.glorfindela.dev {
     reverse_proxy frontend:80
 }
