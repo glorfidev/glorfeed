@@ -1,4 +1,4 @@
-name: Build Frontend
+name: Build and Deploy Frontend
 
 on:
   push:
@@ -9,8 +9,13 @@ on:
       - '.github/workflows/frontend.yml'
   workflow_dispatch:
 
+concurrency:
+  group: glorfeed-frontend-build
+  cancel-in-progress: false
+
 jobs:
   build:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,3 +43,27 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/glorfeed-frontend:latest
             ghcr.io/${{ github.repository_owner }}/glorfeed-frontend:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, Linux, ARM64, glorfeed-prod]
+    concurrency:
+      group: glorfeed-production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Deploy frontend
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/glorfeed-docker-config
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$DOCKER_CONFIG"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          cd /opt/glorfeed/infra/prod
+          docker compose pull frontend
+          docker compose up -d --no-deps frontend
+

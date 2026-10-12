@@ -1,0 +1,47 @@
+name: Deploy Infra
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/prod/**'
+      - '.github/workflows/infra.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: glorfeed-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, ARM64, glorfeed-prod]
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out deployment files
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install deployment files
+        run: |
+          set -euo pipefail
+          install -d /opt/glorfeed/infra/prod
+          install -m 644 infra/prod/docker-compose.yml /opt/glorfeed/infra/prod/docker-compose.yml
+          install -m 644 infra/prod/Caddyfile /opt/glorfeed/infra/prod/Caddyfile
+
+      - name: Apply production configuration
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/glorfeed-docker-config
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$DOCKER_CONFIG"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          cd /opt/glorfeed/infra/prod
+          docker compose up -d
+          docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
