@@ -1,0 +1,30 @@
+services:
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/glorfeed-frontend:${FRONTEND_TAG:-latest}
+    restart: unless-stopped
+    networks:
+      - web
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      GLORFEED_DOMAIN: ${GLORFEED_DOMAIN:?Set GLORFEED_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - web
+
+networks:
+  web:
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -2,6 +2,8 @@
 
 - [Topic service](topic-service/README.md)
 - [Research service](research-service/README.md)
+- [Frontend](frontend/README.md)
+- [Frontend production deployment](infra/prod/README.md)
 - [Local shared infrastructure](infra/local/README.md)
 
 ## Local development
