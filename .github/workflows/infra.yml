@@ -32,6 +32,8 @@ jobs:
           install -d /opt/glorfeed/infra/prod
           install -m 644 infra/prod/docker-compose.yml /opt/glorfeed/infra/prod/docker-compose.yml
           install -m 644 infra/prod/Caddyfile /opt/glorfeed/infra/prod/Caddyfile
+          install -d /opt/glorfeed/infra/prod/postgres/init
+          install -m 755 infra/prod/postgres/init/01-create-service-databases.sh /opt/glorfeed/infra/prod/postgres/init/01-create-service-databases.sh
 
       - name: Apply production configuration
         env:
@@ -44,4 +46,4 @@ jobs:
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           cd /opt/glorfeed/infra/prod
           docker compose up -d
-          docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+          docker compose up -d --force-recreate --no-deps caddy
