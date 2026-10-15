@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
-import { initialStories, initialTopics } from "./mockData";
-import type { Story, Topic } from "./mockData";
+import { sampleStories, sampleTopics } from "./mockData";
+import type { SampleTopic, Story } from "./mockData";
+import { createTopic, deleteTopic, getTopics, updateTopic } from "./topicApi";
+import type { Topic, TopicInput } from "./topicApi";
 
 type View = "overview" | "topics" | "saved";
 type FeedFilter = "all" | "unread" | "saved";
@@ -25,28 +27,38 @@ function IconLibrary() {
       <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6" /></symbol>
       <symbol id="icon-external" viewBox="0 0 24 24"><path d="M13 5h6v6M19 5l-9 9" /><path d="M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4" /></symbol>
       <symbol id="icon-close" viewBox="0 0 24 24"><path d="M5 5 19 19M19 5 5 19" /></symbol>
+      <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4.5-1 10.9-10.9a2.1 2.1 0 0 0-3-3L5.5 16 4 20Z" /><path d="M13 20h7" /></symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 13h12l1-13M9 7V4h6v3" /></symbol>
     </svg>
   );
 }
 
-function topicStyle(topic: Topic): CSSProperties {
-  return { "--topic-color": topic.color, "--topic-bg": topic.background } as CSSProperties;
-}
+const topicPalette = [
+  { color: "#7562db", background: "#f0edff" },
+  { color: "#43a883", background: "#e9f8f1" },
+  { color: "#e89a67", background: "#fff1e7" },
+  { color: "#5b9fce", background: "#e9f5fc" },
+];
 
-function storyCount(count: number): string {
-  return `${count} sample ${count === 1 ? "story" : "stories"}`;
+function topicStyle(topic: Topic | SampleTopic): CSSProperties {
+  if ("color" in topic) {
+    return { "--topic-color": topic.color, "--topic-bg": topic.background } as CSSProperties;
+  }
+  const paletteIndex = Array.from(topic.id).reduce((sum, char) => sum + char.charCodeAt(0), 0) % topicPalette.length;
+  const palette = topicPalette[paletteIndex];
+  return { "--topic-color": palette.color, "--topic-bg": palette.background } as CSSProperties;
 }
 
 function StoryCard({ story, topic, onSave, onOpen }: {
   story: Story;
-  topic: Topic;
+  topic?: SampleTopic;
   onSave: (id: string) => void;
   onOpen: (id: string) => void;
 }) {
   return (
     <article className={`story-card${story.read ? " is-read" : ""}`}>
       <div className="story-meta">
-        <span className="story-topic"><span className="topic-dot" style={topicStyle(topic)} />{topic.name}</span>
+        <span className="story-topic"><span className="topic-dot" style={topic ? topicStyle(topic) : undefined} />{topic?.name ?? "Sample topic"}</span>
         <span className="story-time">{story.time}</span>
       </div>
       <h3>{story.title}</h3>
@@ -66,18 +78,72 @@ function EmptyState({ title, message, icon = "search" }: { title: string; messag
   return <div className="empty-state"><span className="empty-state-icon"><Icon name={icon} /></span><h3>{title}</h3><p>{message}</p></div>;
 }
 
+function TopicListStatus({ loading, error, hasTopics, emptyMessage, onRetry }: {
+  loading: boolean;
+  error: string;
+  hasTopics: boolean;
+  emptyMessage: string;
+  onRetry: () => void;
+}) {
+  if (error) {
+    return <div className="topic-state topic-state-error" role="alert"><span>{error}</span><button type="button" className="text-button" onClick={onRetry}>Retry</button></div>;
+  }
+  if (loading) return <p className="topic-state" role="status">{hasTopics ? "Refreshing topics…" : "Loading topics…"}</p>;
+  if (!hasTopics) return <p className="topic-state">{emptyMessage}</p>;
+  return null;
+}
+
+function createdDate(createdAt: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
 export default function App() {
   const [view, setView] = useState<View>(viewFromHash);
   const [filter, setFilter] = useState<FeedFilter>("all");
   const [search, setSearch] = useState("");
-  const [topics, setTopics] = useState(initialTopics);
-  const [stories, setStories] = useState(initialStories);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(true);
+  const [topicsLoadError, setTopicsLoadError] = useState("");
+  const [topicFormError, setTopicFormError] = useState("");
+  const [topicActionError, setTopicActionError] = useState("");
+  const [topicMutationPending, setTopicMutationPending] = useState<string | null>(null);
+  const [topicForm, setTopicForm] = useState<TopicInput>({ name: "", description: "" });
+  const [editingTopic, setEditingTopic] = useState<Topic | null>(null);
+  const [stories, setStories] = useState(sampleStories);
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
   const [topicDialogOpen, setTopicDialogOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const topicLoadRequest = useRef(0);
+  const topicMutationRevision = useRef(0);
+  const topicMutationInFlight = useRef(false);
   const topicDialog = useRef<HTMLDialogElement>(null);
   const storyDialog = useRef<HTMLDialogElement>(null);
   const topicName = useRef<HTMLInputElement>(null);
+
+  const loadTopics = useCallback(async () => {
+    const requestId = ++topicLoadRequest.current;
+    const revision = topicMutationRevision.current;
+    setTopicsLoading(true);
+    setTopicsLoadError("");
+    try {
+      const result = await getTopics();
+      if (requestId === topicLoadRequest.current && revision === topicMutationRevision.current) {
+        setTopics(result);
+      }
+    } catch (error) {
+      if (requestId === topicLoadRequest.current && revision === topicMutationRevision.current) {
+        setTopicsLoadError(error instanceof Error ? error.message : "Could not load topics. Please try again.");
+      }
+    } finally {
+      if (requestId === topicLoadRequest.current) setTopicsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadTopics();
+  }, [loadTopics]);
 
   useEffect(() => {
     const onHashChange = () => setView(viewFromHash());
@@ -115,10 +181,110 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const topicFor = (story: Story): Topic => {
-    const topic = topics.find((candidate) => candidate.id === story.topicId);
-    if (!topic) throw new Error(`Missing topic for story: ${story.id}`);
-    return topic;
+  const topicFor = (story: Story): SampleTopic | undefined => {
+    return sampleTopics.find((candidate) => candidate.id === story.topicId);
+  };
+
+  const openNewTopic = () => {
+    if (topicMutationInFlight.current) return;
+    setEditingTopic(null);
+    setTopicForm({ name: "", description: "" });
+    setTopicFormError("");
+    setTopicDialogOpen(true);
+  };
+
+  const openEditTopic = (topic: Topic) => {
+    if (topicMutationInFlight.current) return;
+    setEditingTopic(topic);
+    setTopicForm({ name: topic.name, description: topic.description });
+    setTopicFormError("");
+    setTopicDialogOpen(true);
+  };
+
+  const closeTopicDialog = () => {
+    if (topicMutationInFlight.current) return;
+    setTopicDialogOpen(false);
+    setEditingTopic(null);
+    setTopicForm({ name: "", description: "" });
+    setTopicFormError("");
+  };
+
+  const beginTopicMutation = (key: string): boolean => {
+    if (topicMutationInFlight.current) return false;
+    topicMutationInFlight.current = true;
+    topicMutationRevision.current += 1;
+    setTopicMutationPending(key);
+    setTopicActionError("");
+    return true;
+  };
+
+  const finishTopicMutation = () => {
+    topicMutationRevision.current += 1;
+    topicMutationInFlight.current = false;
+    setTopicMutationPending(null);
+  };
+
+  const saveTopic = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (topicMutationInFlight.current) return;
+    const input = { name: topicForm.name.trim(), description: topicForm.description.trim() };
+    if (!input.name || !input.description) {
+      setTopicFormError("Enter both a topic name and description.");
+      return;
+    }
+    if (input.name.length > 255 || input.description.length > 10_000) {
+      setTopicFormError("The name must be 255 characters or fewer and the description 10,000 or fewer.");
+      return;
+    }
+
+    const currentEditingTopic = editingTopic;
+    if (!beginTopicMutation(currentEditingTopic?.id ?? "new")) return;
+    let refresh = false;
+    try {
+      if (currentEditingTopic) {
+        const updated = await updateTopic(currentEditingTopic.id, input);
+        setTopics((current) => current.some((topic) => topic.id === updated.id)
+          ? current.map((topic) => topic.id === updated.id ? updated : topic)
+          : [updated, ...current]);
+        setToast("Topic updated");
+      } else {
+        const created = await createTopic(input);
+        setTopics((current) => current.some((topic) => topic.id === created.id)
+          ? current.map((topic) => topic.id === created.id ? created : topic)
+          : [created, ...current]);
+        setToast("Topic added");
+        navigate("topics");
+      }
+      setTopicDialogOpen(false);
+      setEditingTopic(null);
+      setTopicForm({ name: "", description: "" });
+      setTopicFormError("");
+      refresh = true;
+    } catch (error) {
+      setTopicFormError(error instanceof Error ? error.message : "Could not save the topic. Please try again.");
+      refresh = true;
+    } finally {
+      finishTopicMutation();
+    }
+    if (refresh) void loadTopics();
+  };
+
+  const removeTopic = async (topic: Topic) => {
+    if (topicMutationInFlight.current || !window.confirm(`Delete “${topic.name}”? This cannot be undone.`)) return;
+    if (!beginTopicMutation(topic.id)) return;
+    let refresh = false;
+    try {
+      await deleteTopic(topic.id);
+      setTopics((current) => current.filter((item) => item.id !== topic.id));
+      setToast("Topic deleted");
+      refresh = true;
+    } catch (error) {
+      setTopicActionError(error instanceof Error ? error.message : "Could not delete the topic. Please try again.");
+      refresh = true;
+    } finally {
+      finishTopicMutation();
+    }
+    if (refresh) void loadTopics();
   };
 
   const saveStory = (id: string) => {
@@ -133,28 +299,9 @@ export default function App() {
     setSelectedStoryId(id);
   };
 
-  const addTopic = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const values = new FormData(form);
-    const name = String(values.get("topicName") ?? "").trim();
-    const description = String(values.get("topicDescription") ?? "").trim();
-    if (!name) return;
-    const palettes = [
-      { color: "#bd7aaf", background: "#faecf6" },
-      { color: "#cb9651", background: "#fff3e1" },
-      { color: "#5b9fce", background: "#e9f5fc" },
-    ];
-    setTopics((current) => [...current, { id: crypto.randomUUID(), name, description, ...palettes[current.length % palettes.length] }]);
-    form.reset();
-    setTopicDialogOpen(false);
-    navigate("topics");
-    setToast("Topic added to this preview");
-  };
-
   const visibleStories = stories.filter((story) => {
     const matchesFilter = filter === "all" || (filter === "saved" ? story.saved : !story.read);
-    const text = `${story.title} ${story.summary} ${topicFor(story).name}`.toLowerCase();
+    const text = `${story.title} ${story.summary} ${topicFor(story)?.name ?? ""}`.toLowerCase();
     return matchesFilter && text.includes(search.trim().toLowerCase());
   });
   const savedStories = stories.filter((story) => story.saved);
@@ -185,7 +332,7 @@ export default function App() {
         {view === "overview" && <section className="page-view" aria-labelledby="overview-title">
           <div className="page-heading">
             <div><p className="eyebrow">YOUR BRIEFING <span aria-hidden="true">✦</span> {today}</p><h1 id="overview-title">Follow what matters.</h1><p className="page-description">Fresh perspectives on the topics you choose, gathered in one quiet place.</p></div>
-            <button type="button" className="primary-button" onClick={() => setTopicDialogOpen(true)}><Icon name="plus" /> Add topic</button>
+            <button type="button" className="primary-button" onClick={openNewTopic}><Icon name="plus" /> Add topic</button>
           </div>
           <div className="content-grid">
             <section className="feed-section" aria-labelledby="feed-title">
@@ -199,16 +346,30 @@ export default function App() {
               <div className="feed-list">{visibleStories.length ? visibleStories.map(renderStory) : <EmptyState title={search ? "No matching stories" : "Nothing here yet"} message={search ? "Try another search term." : filter === "saved" ? "Save a story to find it here." : "You have read all the sample stories."} />}</div>
             </section>
             <aside className="topics-panel" aria-labelledby="topics-panel-title">
-              <div className="panel-heading"><div><p className="section-kicker">KEEP IN FOCUS</p><h2 id="topics-panel-title">Following</h2></div><button className="icon-button" type="button" onClick={() => setTopicDialogOpen(true)} aria-label="Add a topic"><Icon name="plus" /></button></div>
-              <div className="topic-mini-list">{topics.slice(0, 4).map((topic) => <div className="topic-mini" key={topic.id}><span className="topic-mini-icon" style={topicStyle(topic)}>{topic.name[0].toUpperCase()}</span><span><strong>{topic.name}</strong><small>{storyCount(stories.filter((story) => story.topicId === topic.id).length)}</small></span></div>)}</div>
+              <div className="panel-heading"><div><p className="section-kicker">KEEP IN FOCUS</p><h2 id="topics-panel-title">Following</h2></div><button className="icon-button" type="button" onClick={openNewTopic} aria-label="Add a topic"><Icon name="plus" /></button></div>
+              <div className="topic-mini-list">
+                <TopicListStatus loading={topicsLoading} error={topicsLoadError} hasTopics={topics.length > 0} emptyMessage="No live topics yet. Add one to get started." onRetry={() => void loadTopics()} />
+                {topics.slice(0, 4).map((topic) => <div className="topic-mini" key={topic.id}><span className="topic-mini-icon" style={topicStyle(topic)}>{topic.name[0].toUpperCase()}</span><span><strong>{topic.name}</strong><small>Live topic</small></span></div>)}
+              </div>
               <button className="panel-footer-button" type="button" onClick={() => navigate("topics")}>See all topics <Icon name="arrow" /></button>
             </aside>
           </div>
         </section>}
 
         {view === "topics" && <section className="page-view" aria-labelledby="topics-title">
-          <div className="page-heading"><div><p className="eyebrow">YOUR INTERESTS</p><h1 id="topics-title">Topics you follow.</h1><p className="page-description">Each topic gives your research a direction. These are sample topics for the preview.</p></div><button type="button" className="primary-button" onClick={() => setTopicDialogOpen(true)}><Icon name="plus" /> Add topic</button></div>
-          <div className="topic-grid">{topics.map((topic) => <article className="topic-card" key={topic.id}><span className="topic-card-icon" style={topicStyle(topic)}>{topic.name[0].toUpperCase()}</span><h2>{topic.name}</h2><p>{topic.description || "A topic you want to follow."}</p><div className="topic-card-footer"><Icon name="layers" /> {storyCount(stories.filter((story) => story.topicId === topic.id).length)}</div></article>)}</div>
+          <div className="page-heading"><div><p className="eyebrow">YOUR INTERESTS</p><h1 id="topics-title">Topics you follow.</h1><p className="page-description">Manage your live topics. Feed stories are sample preview content and are not linked to these records.</p></div><button type="button" className="primary-button" onClick={openNewTopic}><Icon name="plus" /> Add topic</button></div>
+          {topicActionError && <p className="topic-action-error" role="alert">{topicActionError}</p>}
+          <TopicListStatus loading={topicsLoading} error={topicsLoadError} hasTopics={topics.length > 0} emptyMessage="You haven't added any live topics yet." onRetry={() => void loadTopics()} />
+          <div className="topic-grid">
+            {topics.map((topic) => <article className="topic-card" key={topic.id}>
+              <div className="topic-card-top"><span className="topic-card-icon" style={topicStyle(topic)}>{topic.name[0].toUpperCase()}</span><div className="topic-card-actions">
+                <button className="topic-action-button" type="button" onClick={() => openEditTopic(topic)} disabled={topicMutationPending !== null} aria-label={`Edit ${topic.name}`}><Icon name="edit" /></button>
+                <button className="topic-action-button is-danger" type="button" onClick={() => void removeTopic(topic)} disabled={topicMutationPending !== null} aria-label={topicMutationPending === topic.id ? `Deleting ${topic.name}` : `Delete ${topic.name}`}><Icon name="trash" /></button>
+              </div></div>
+              <h2>{topic.name}</h2><p>{topic.description}</p>
+              <div className="topic-card-footer">Added {createdDate(topic.createdAt)}</div>
+            </article>)}
+          </div>
         </section>}
 
         {view === "saved" && <section className="page-view" aria-labelledby="saved-title">
@@ -217,20 +378,24 @@ export default function App() {
         </section>}
       </main>
 
-      <dialog className="topic-dialog" ref={topicDialog} aria-labelledby="topic-dialog-title" onClose={() => setTopicDialogOpen(false)}>
-        <form onSubmit={addTopic}>
-          <div className="dialog-top"><div><p className="section-kicker">FOLLOW SOMETHING NEW</p><h2 id="topic-dialog-title">Add a topic</h2></div><button type="button" className="icon-button" onClick={() => setTopicDialogOpen(false)} aria-label="Close"><Icon name="close" /></button></div>
-          <p className="dialog-description">What would you like to keep up with? Changes in this preview reset when you reload the page.</p>
-          <label className="form-label" htmlFor="topic-name">Topic name</label><input className="form-input" id="topic-name" ref={topicName} name="topicName" maxLength={60} placeholder="e.g. Sustainable aviation" required />
-          <label className="form-label" htmlFor="topic-description">What interests you about it?</label><textarea className="form-input" id="topic-description" name="topicDescription" maxLength={200} rows={3} placeholder="The angle you'd like to follow..." />
-          <div className="dialog-actions"><button className="secondary-button" type="button" onClick={() => setTopicDialogOpen(false)}>Cancel</button><button className="primary-button" type="submit">Add topic <Icon name="arrow" /></button></div>
+      <dialog className="topic-dialog" ref={topicDialog} aria-labelledby="topic-dialog-title" onClose={closeTopicDialog} onCancel={(event) => {
+        if (topicMutationInFlight.current) event.preventDefault();
+        else closeTopicDialog();
+      }}>
+        <form onSubmit={saveTopic}>
+          <div className="dialog-top"><div><p className="section-kicker">{editingTopic ? "REFINE YOUR INTEREST" : "FOLLOW SOMETHING NEW"}</p><h2 id="topic-dialog-title">{editingTopic ? "Edit topic" : "Add a topic"}</h2></div><button type="button" className="icon-button" onClick={closeTopicDialog} disabled={topicMutationPending !== null} aria-label="Close"><Icon name="close" /></button></div>
+          <p className="dialog-description">Live topics are saved to your Glorfeed workspace. Sample feed stories remain preview content.</p>
+          <label className="form-label" htmlFor="topic-name">Topic name</label><input className="form-input" id="topic-name" ref={topicName} name="topicName" value={topicForm.name} onChange={(event) => { setTopicForm((current) => ({ ...current, name: event.target.value })); setTopicFormError(""); }} maxLength={255} placeholder="e.g. Sustainable aviation" required disabled={topicMutationPending !== null} />
+          <label className="form-label" htmlFor="topic-description">Description</label><textarea className="form-input" id="topic-description" name="topicDescription" value={topicForm.description} onChange={(event) => { setTopicForm((current) => ({ ...current, description: event.target.value })); setTopicFormError(""); }} maxLength={10_000} rows={3} placeholder="The angle you'd like to follow..." required disabled={topicMutationPending !== null} />
+          {topicFormError && <p className="form-error" role="alert">{topicFormError}</p>}
+          <div className="dialog-actions"><button className="secondary-button" type="button" onClick={closeTopicDialog} disabled={topicMutationPending !== null}>Cancel</button><button className="primary-button" type="submit" disabled={topicMutationPending !== null}>{topicMutationPending !== null ? "Saving…" : editingTopic ? "Save changes" : "Add topic"} <Icon name="arrow" /></button></div>
         </form>
       </dialog>
 
       <dialog className="story-dialog" ref={storyDialog} aria-labelledby="story-dialog-title" onClose={() => setSelectedStoryId(null)}>
         <div className="story-dialog-inner">
           <div className="story-dialog-top"><span className="story-preview-label">SAMPLE RESEARCH BRIEF</span><button type="button" className="icon-button" onClick={() => setSelectedStoryId(null)} aria-label="Close story"><Icon name="close" /></button></div>
-          {selectedStory && <><p className="story-dialog-meta">{topicFor(selectedStory).name} · {selectedStory.time}</p><h2 id="story-dialog-title">{selectedStory.title}</h2><p className="story-dialog-summary">{selectedStory.summary}</p><div className="story-divider" /><h3>The brief</h3>{selectedStory.detail.map((paragraph) => <p className="story-detail-text" key={paragraph}>{paragraph}</p>)}<div className="story-divider" /><h3>Sample source</h3><div className="source-list">{selectedStory.sources.map((source) => <a className="source-pill" href={source.url} target="_blank" rel="noopener noreferrer" key={source.url}>{source.title} <Icon name="external" /></a>)}</div><div className="story-dialog-actions"><button className="secondary-button" type="button" onClick={() => saveStory(selectedStory.id)}>{selectedStory.saved ? "Remove from saved" : "Save this story"}</button></div></>}
+          {selectedStory && <><p className="story-dialog-meta">{topicFor(selectedStory)?.name ?? "Sample topic"} · {selectedStory.time}</p><h2 id="story-dialog-title">{selectedStory.title}</h2><p className="story-dialog-summary">{selectedStory.summary}</p><div className="story-divider" /><h3>The brief</h3>{selectedStory.detail.map((paragraph) => <p className="story-detail-text" key={paragraph}>{paragraph}</p>)}<div className="story-divider" /><h3>Sample source</h3><div className="source-list">{selectedStory.sources.map((source) => <a className="source-pill" href={source.url} target="_blank" rel="noopener noreferrer" key={source.url}>{source.title} <Icon name="external" /></a>)}</div><div className="story-dialog-actions"><button className="secondary-button" type="button" onClick={() => saveStory(selectedStory.id)}>{selectedStory.saved ? "Remove from saved" : "Save this story"}</button></div></>}
         </div>
       </dialog>
       <div className={`toast${toast ? " is-visible" : ""}`} role="status" aria-live="polite">{toast}</div>

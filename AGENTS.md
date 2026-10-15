@@ -1,10 +1,10 @@
 # Repository instructions
 
-- You may inspect files and run read-only commands, but do not run tests, compile, builds, Maven, Gradle, npm, Docker, or long-running verification commands unless explicitly asked.
-- Exception for GPT-6 Luna: while implementing an approved software task, Luna has standing permission to write and run relevant tests and execute the compilation and build commands needed to validate that task, including Maven, Gradle, and npm commands. Keep verification focused on the assigned changes. Docker and deployment commands still require an explicit request.
-- Only write the requested code and documentation. Do not stage, commit, or push changes, and do not trigger, monitor, or check GitHub Actions workflows unless explicitly asked. The user handles commits and workflow checks.
-- Exception for GPT-6 Luna: after completing an approved task and its relevant verification, Luna may stage all files belonging to that task, create a commit, and push its feature branch without another request. Preserve unrelated staged, unstaged, and untracked changes; do not include them in the commit. Use `feature/<feature-name>` for implementation branches. Do not push directly to `main` or merge into it; the user approves merges. This exception does not authorize deployment or manually triggering, monitoring, or checking GitHub Actions workflows.
-- After pushing its feature branch, Luna may create a draft GitHub pull request targeting `main`, or update an existing pull request for that branch. Describe the implemented behavior, relevant verification results, and any remaining limitations. Return the pull request link for Sol's review and the user's merge decision. Do not merge the pull request automatically.
+- By default, the root agent and GPT-6.1 Sol help design and scope approved software tasks. GPT-6 Luna then creates a `feature/<feature-name>` branch, implements the approved code and documentation, and runs focused relevant tests and builds. Luna may use subagents to parallelize approved implementation work when useful.
+- Before publication, GPT-6.1 Sol reviews Luna's changes. Luna fixes actionable findings and reruns affected tests or builds; Sol reviews the fixes before publication.
+- After Sol approves the review, Luna may stage and commit only files belonging to the approved task, push the feature branch, and create or update a draft GitHub pull request targeting `main` without further approval. Preserve all unrelated staged, unstaged, and untracked changes; never include them in the task commit. The draft PR should describe behavior, verification, and limitations, and Luna returns its URL. Do not push directly to `main` or merge the PR; the user decides whether to merge.
+- Luna may run focused tests and compilation/build commands needed for an approved task, including Maven, Gradle, and npm. Docker, deployment, and manually triggering, monitoring, or checking GitHub Actions require explicit authorization; an Actions run caused by an authorized branch push is permitted. The standard workflow does not authorize the restricted actions.
+- Other agents may inspect files and run read-only commands, but must not run tests, compile, build, or run Docker unless explicitly asked. Only write requested code and documentation. Stage, commit, push, and GitHub Actions permissions follow the workflow above for Luna and require explicit authorization for other agents.
 - Use Lombok `@AllArgsConstructor` for JPA entities when the constructor only assigns every field. Keep a JPA-compatible no-argument constructor as well. Use a handwritten constructor when it enforces additional invariants.
 
 ## Working principles
@@ -16,4 +16,4 @@
 | **Surgical Changes** | Orthogonal edits, touching code you shouldn't |
 | **Goal-Driven Execution** | Leverage through tests-first, verifiable success criteria |
 
-These principles apply within the execution restrictions above, including Luna's testing and build exception. Other agents still need an explicit request to run tests, builds, or verification commands.
+These principles apply within the workflow and execution restrictions above.

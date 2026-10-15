@@ -1,4 +1,4 @@
-export interface Topic {
+export interface SampleTopic {
   id: string;
   name: string;
   description: string;
@@ -23,14 +23,14 @@ export interface Story {
   read: boolean;
 }
 
-export const initialTopics: Topic[] = [
+export const sampleTopics: SampleTopic[] = [
   { id: "ai", name: "AI & society", description: "How AI tools change work, creativity, and everyday life.", color: "#7562db", background: "#f0edff" },
   { id: "climate", name: "Climate & energy", description: "New ideas for cleaner power and a more resilient world.", color: "#43a883", background: "#e9f8f1" },
   { id: "design", name: "Product design", description: "Thoughtful interfaces and the people who use them.", color: "#e89a67", background: "#fff1e7" },
   { id: "dev", name: "Developer tooling", description: "Practical tools and patterns for building better software.", color: "#5b9fce", background: "#e9f5fc" },
 ];
 
-export const initialStories: Story[] = [
+export const sampleStories: Story[] = [
   {
     id: "agents",
     topicId: "ai",
