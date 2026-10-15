@@ -3,7 +3,7 @@ services:
     image: postgres:18.1
     restart: unless-stopped
     # Debezium will read outbox inserts through logical decoding.
-    command: ["postgres", "-c", "wal_level=logical"]
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_slot_wal_keep_size=1024MB"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in the server .env file}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the server .env file}
@@ -23,6 +23,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 1536m
+    cpus: 1.5
 
   frontend:
     image: ghcr.io/glorfidev/glorfeed-frontend:latest
@@ -33,6 +35,8 @@ services:
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-glorfeed-frontend}
     networks:
       - web
+    mem_limit: 256m
+    cpus: 0.25
 
   topic-service:
     image: ghcr.io/glorfidev/glorfeed-topic-service:latest
@@ -50,6 +54,113 @@ services:
     networks:
       - backend
       - web
+    mem_limit: 768m
+    cpus: 0.75
+
+  research-service:
+    image: ghcr.io/glorfidev/glorfeed-research-service:latest
+    restart: unless-stopped
+    environment:
+      RESEARCH_DB_URL: jdbc:postgresql://postgres:5432/glorfeed_research
+      RESEARCH_DB_USER: ${RESEARCH_DB_USER:?Set RESEARCH_DB_USER in the server .env file}
+      RESEARCH_DB_PASSWORD: ${RESEARCH_DB_PASSWORD:?Set RESEARCH_DB_PASSWORD in the server .env file}
+      RESEARCH_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SERVER_PORT: 8080
+      SERVER_ADDRESS: 0.0.0.0
+      RESEARCH_MANUAL_API_ENABLED: "false"
+      RESEARCH_AI_MODEL: ${RESEARCH_AI_MODEL:-gpt-6-luna}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - backend
+    mem_limit: 768m
+    cpus: 0.75
+
+  kafka:
+    image: apache/kafka:4.3.1
+    restart: unless-stopped
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 72
+      KAFKA_LOG_RETENTION_BYTES: 536870912
+      KAFKA_LOG_SEGMENT_BYTES: 67108864
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx768m
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "KAFKA_HEAP_OPTS='-Xms32m -Xmx128m' /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    mem_limit: 1536m
+    cpus: 1.5
+
+  debezium-connect:
+    image: quay.io/debezium/connect:3.7.0.Final
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: glorfeed-connect
+      CONFIG_STORAGE_TOPIC: glorfeed-connect-configs
+      OFFSET_STORAGE_TOPIC: glorfeed-connect-offsets
+      STATUS_STORAGE_TOPIC: glorfeed-connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      ADVERTISED_HOST_NAME: debezium-connect
+      REST_HOST_NAME: 0.0.0.0
+      REST_PORT: 8083
+      CONNECT_CONFIG_PROVIDERS: env
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      CDC_TOPIC_DB_USER: ${CDC_TOPIC_DB_USER:?Set CDC_TOPIC_DB_USER in the server .env file}
+      CDC_TOPIC_DB_PASSWORD: ${CDC_TOPIC_DB_PASSWORD:?Set CDC_TOPIC_DB_PASSWORD in the server .env file}
+      CDC_RESEARCH_DB_USER: ${CDC_RESEARCH_DB_USER:?Set CDC_RESEARCH_DB_USER in the server .env file}
+      CDC_RESEARCH_DB_PASSWORD: ${CDC_RESEARCH_DB_PASSWORD:?Set CDC_RESEARCH_DB_PASSWORD in the server .env file}
+      HEAP_OPTS: -Xms256m -Xmx512m
+    ports:
+      - "127.0.0.1:18083:8083"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail http://127.0.0.1:8083/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    mem_limit: 1024m
+    cpus: 1
 
   caddy:
     image: caddy:2
@@ -65,6 +176,8 @@ services:
       - caddy_config:/config
     networks:
       - web
+    mem_limit: 256m
+    cpus: 0.25
 
 networks:
   web:
@@ -74,3 +187,4 @@ volumes:
   caddy_data:
   caddy_config:
   postgres_data:
+  kafka_data:
