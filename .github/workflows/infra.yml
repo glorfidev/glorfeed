@@ -1,11 +1,18 @@
 name: Deploy Infra
 
 on:
-  workflow_call:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/prod/**'
+      - '.github/workflows/infra.yml'
+  workflow_dispatch:
 
 concurrency:
   group: glorfeed-production-deploy
   cancel-in-progress: false
+  queue: max
 
 jobs:
   deploy:
@@ -20,6 +27,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check deployment dependencies
+        run: |
+          set -euo pipefail
+          command -v curl >/dev/null || { echo "Install curl on the production runner before deployment." >&2; exit 1; }
+          command -v jq >/dev/null || { echo "Install jq on the production runner before deployment." >&2; exit 1; }
+
       - name: Install deployment files
         run: |
           set -euo pipefail
@@ -28,15 +41,13 @@ jobs:
           install -m 644 infra/prod/Caddyfile /opt/glorfeed/infra/prod/Caddyfile
           install -d /opt/glorfeed/infra/prod/postgres/init
           install -m 755 infra/prod/postgres/init/01-create-service-databases.sh /opt/glorfeed/infra/prod/postgres/init/01-create-service-databases.sh
-          install -m 755 infra/prod/deploy.sh /opt/glorfeed/infra/prod/deploy.sh
           install -m 755 infra/prod/provision-cdc.sh /opt/glorfeed/infra/prod/provision-cdc.sh
-          install -m 755 infra/prod/register_connectors.py /opt/glorfeed/infra/prod/register_connectors.py
-          install -m 755 infra/prod/smoke-crud-projection.py /opt/glorfeed/infra/prod/smoke-crud-projection.py
+          install -m 755 infra/prod/register-connectors.sh /opt/glorfeed/infra/prod/register-connectors.sh
           install -d /opt/glorfeed/infra/prod/connectors
           install -m 644 infra/prod/connectors/topic-outbox.json /opt/glorfeed/infra/prod/connectors/topic-outbox.json
           install -m 644 infra/prod/connectors/research-outbox.json /opt/glorfeed/infra/prod/connectors/research-outbox.json
 
-      - name: Apply production configuration
+      - name: Pull images and start the stack
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCKER_CONFIG: ${{ runner.temp }}/glorfeed-docker-config
@@ -46,4 +57,52 @@ jobs:
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           cd /opt/glorfeed/infra/prod
-          ./deploy.sh
+
+          if [[ ! -f .env ]]; then
+            echo "Create infra/prod/.env on the server before deployment." >&2
+            exit 1
+          fi
+
+          docker compose config --quiet
+
+          # Infra applies images that have already been published by their
+          # independent service workflows.
+          docker compose pull topic-service research-service
+
+          docker compose up -d --wait --wait-timeout 300 postgres kafka
+
+          # The consumer subscribes before any topic event exists; precreate
+          # its fixed topic because broker auto-creation is disabled.
+          docker compose exec -T kafka sh -c \
+            'KAFKA_HEAP_OPTS="-Xms32m -Xmx128m" exec /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic outbox.event.topic --partitions 1 --replication-factor 1'
+
+          docker compose up -d --wait --wait-timeout 300
+          docker compose exec -T debezium-connect curl --silent --show-error --fail \
+            --retry-all-errors --retry 60 --retry-delay 3 --retry-max-time 300 --max-time 5 \
+            http://topic-service:8080/actuator/health >/dev/null
+          docker compose exec -T debezium-connect curl --silent --show-error --fail \
+            --retry-all-errors --retry 60 --retry-delay 3 --retry-max-time 300 --max-time 5 \
+            http://research-service:8080/actuator/health >/dev/null
+
+      - name: Provision CDC and reconcile connectors
+        run: |
+          set -euo pipefail
+          cd /opt/glorfeed/infra/prod
+          if [[ ! -f .env ]]; then
+            echo "Create infra/prod/.env on the server before deployment." >&2
+            exit 1
+          fi
+          set -a
+          # shellcheck disable=SC1091
+          . ./.env
+          set +a
+          ./provision-cdc.sh
+          ./register-connectors.sh
+
+      - name: Refresh Caddy configuration
+        run: |
+          set -euo pipefail
+          cd /opt/glorfeed/infra/prod
+          # Recreate only Caddy so its bind mount picks up the installed config.
+          docker compose up -d --force-recreate --no-deps caddy
+          echo "Production event pipeline is ready."

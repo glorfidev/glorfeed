@@ -1,0 +1,65 @@
+name: Build and Deploy Research Service
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'research-service/**'
+      - '.github/workflows/research-service.yml'
+      - '.github/workflows/build-service-image.yml'
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy after building (disable to publish the image only)
+        type: boolean
+        required: true
+        default: true
+
+concurrency:
+  group: glorfeed-research-service-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      context: ./research-service
+      image-name: glorfeed-research-service
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
+    runs-on: [self-hosted, Linux, ARM64, glorfeed-prod]
+    concurrency:
+      group: glorfeed-production-deploy
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Deploy research service
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/glorfeed-docker-config
+        run: |
+          set -euo pipefail
+          prod_dir=/opt/glorfeed/infra/prod
+          if [[ ! -f "$prod_dir/docker-compose.yml" || ! -f "$prod_dir/.env" ]]; then
+            echo "Production infrastructure is not installed. Run the Deploy Infra workflow on main first." >&2
+            exit 1
+          fi
+          cd "$prod_dir"
+          docker compose config --quiet
+          install -d -m 700 "$DOCKER_CONFIG"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker compose pull research-service
+          docker compose up -d --no-deps --wait --wait-timeout 300 research-service
+          docker compose exec -T debezium-connect curl --silent --show-error --fail \
+            --retry-all-errors --retry 60 --retry-delay 3 --retry-max-time 300 --max-time 5 \
+            http://research-service:8080/actuator/health >/dev/null
