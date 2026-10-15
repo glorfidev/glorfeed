@@ -7,7 +7,7 @@ on:
     paths:
       - 'topic-service/**'
       - 'research-service/**'
-      - ".github/workflows/topic-service.yml"
+      - ".github/workflows/services.yml"
       - '.github/workflows/build-service-image.yml'
       - 'infra/prod/**'
       - '.github/workflows/infra.yml'
