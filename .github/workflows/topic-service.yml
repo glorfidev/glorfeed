@@ -1,4 +1,4 @@
-name: Build Topic Service
+name: Build and Deploy Topic Service
 
 on:
   push:
@@ -8,9 +8,20 @@ on:
       - 'topic-service/**'
       - ".github/workflows/topic-service.yml"
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the image after building (disable to publish it before first-time Infra setup)
+        type: boolean
+        required: true
+        default: true
+
+concurrency:
+  group: glorfeed-topic-service-build
+  cancel-in-progress: false
 
 jobs:
   build:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -18,6 +29,12 @@ jobs:
     steps:
       - name: Check out source code
         uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to Github Container Registry
         uses: docker/login-action@v3
@@ -30,9 +47,32 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: ./topic-service
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/glorfeed-topic-service:latest
             ghcr.io/${{ github.repository_owner }}/glorfeed-topic-service:${{ github.sha }}
 
-
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
+    runs-on: [self-hosted, Linux, ARM64, glorfeed-prod]
+    concurrency:
+      group: glorfeed-production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Deploy topic service
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_CONFIG: ${{ runner.temp }}/glorfeed-docker-config
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$DOCKER_CONFIG"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          cd /opt/glorfeed/infra/prod
+          docker compose pull topic-service
+          docker compose up -d topic-service

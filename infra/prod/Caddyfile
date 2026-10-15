@@ -1,3 +1,5 @@
 feed.glorfindela.dev {
+    @topics path /api/topics /api/topics/*
+    reverse_proxy @topics topic-service:8080
     reverse_proxy frontend:80
 }
