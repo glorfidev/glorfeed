@@ -9,6 +9,24 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  kafka:
+    bootstrap-servers: ${RESEARCH_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: glorfeed-research-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
 
 server:
   port: ${SERVER_PORT:8080}
+  address: ${SERVER_ADDRESS:127.0.0.1}
+
+research:
+  schedule:
+    interval: ${RESEARCH_SCHEDULE_INTERVAL:PT1H}
+    initial-delay: ${RESEARCH_SCHEDULE_INITIAL_DELAY:PT10S}
+  ai:
+    manual-enabled: ${RESEARCH_MANUAL_API_ENABLED:false}
+    model: ${RESEARCH_AI_MODEL:gpt-6-luna}

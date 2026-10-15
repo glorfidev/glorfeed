@@ -64,6 +64,7 @@ services:
     restart: unless-stopped
     env_file:
       - ../../topic-service/infra/local/.env
+      - ../../research-service/infra/local/.env
     profiles:
       - cdc
     ports:
