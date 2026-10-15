@@ -4,6 +4,7 @@ import { sampleStories, sampleTopics } from "./mockData";
 import type { SampleTopic, Story } from "./mockData";
 import { createTopic, deleteTopic, getTopics, updateTopic } from "./topicApi";
 import type { Topic, TopicInput } from "./topicApi";
+import { AuthenticationRequiredError, useAuth } from "./auth";
 
 type View = "overview" | "topics" | "saved";
 type FeedFilter = "all" | "unread" | "saved";
@@ -100,6 +101,7 @@ function createdDate(createdAt: string): string {
 }
 
 export default function App() {
+  const auth = useAuth();
   const [view, setView] = useState<View>(viewFromHash);
   const [filter, setFilter] = useState<FeedFilter>("all");
   const [search, setSearch] = useState("");
@@ -128,18 +130,22 @@ export default function App() {
     setTopicsLoading(true);
     setTopicsLoadError("");
     try {
-      const result = await getTopics();
+      const result = await getTopics(auth.getAccessToken);
       if (requestId === topicLoadRequest.current && revision === topicMutationRevision.current) {
         setTopics(result);
       }
     } catch (error) {
+      if (error instanceof AuthenticationRequiredError) {
+        auth.expireSession();
+        return;
+      }
       if (requestId === topicLoadRequest.current && revision === topicMutationRevision.current) {
         setTopicsLoadError(error instanceof Error ? error.message : "Could not load topics. Please try again.");
       }
     } finally {
       if (requestId === topicLoadRequest.current) setTopicsLoading(false);
     }
-  }, []);
+  }, [auth.expireSession, auth.getAccessToken]);
 
   useEffect(() => {
     void loadTopics();
@@ -242,13 +248,13 @@ export default function App() {
     let refresh = false;
     try {
       if (currentEditingTopic) {
-        const updated = await updateTopic(currentEditingTopic.id, input);
+        const updated = await updateTopic(currentEditingTopic.id, input, auth.getAccessToken);
         setTopics((current) => current.some((topic) => topic.id === updated.id)
           ? current.map((topic) => topic.id === updated.id ? updated : topic)
           : [updated, ...current]);
         setToast("Topic updated");
       } else {
-        const created = await createTopic(input);
+        const created = await createTopic(input, auth.getAccessToken);
         setTopics((current) => current.some((topic) => topic.id === created.id)
           ? current.map((topic) => topic.id === created.id ? created : topic)
           : [created, ...current]);
@@ -261,6 +267,10 @@ export default function App() {
       setTopicFormError("");
       refresh = true;
     } catch (error) {
+      if (error instanceof AuthenticationRequiredError) {
+        auth.expireSession();
+        return;
+      }
       setTopicFormError(error instanceof Error ? error.message : "Could not save the topic. Please try again.");
       refresh = true;
     } finally {
@@ -274,11 +284,15 @@ export default function App() {
     if (!beginTopicMutation(topic.id)) return;
     let refresh = false;
     try {
-      await deleteTopic(topic.id);
+      await deleteTopic(topic.id, auth.getAccessToken);
       setTopics((current) => current.filter((item) => item.id !== topic.id));
       setToast("Topic deleted");
       refresh = true;
     } catch (error) {
+      if (error instanceof AuthenticationRequiredError) {
+        auth.expireSession();
+        return;
+      }
       setTopicActionError(error instanceof Error ? error.message : "Could not delete the topic. Please try again.");
       refresh = true;
     } finally {
@@ -324,7 +338,7 @@ export default function App() {
             <button className={`nav-link${view === "topics" ? " is-active" : ""}`} type="button" onClick={() => navigate("topics")} aria-current={view === "topics" ? "page" : undefined}>Topics <span className="nav-count">{topics.length}</span></button>
             <button className={`nav-link${view === "saved" ? " is-active" : ""}`} type="button" onClick={() => navigate("saved")} aria-current={view === "saved" ? "page" : undefined}>Saved</button>
           </nav>
-          <div className="header-end"><span className="preview-label">DESIGN PREVIEW</span><span className="avatar" aria-label="Mario's preview workspace">M</span></div>
+          <div className="header-end"><span className="preview-label">{auth.displayName}</span><button className="text-button auth-logout" type="button" onClick={auth.logout}>Sign out</button></div>
         </div>
       </header>
 

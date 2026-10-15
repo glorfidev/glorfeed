@@ -158,6 +158,16 @@ textarea.form-input { resize: vertical; min-height: 76px; }
 .toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; border-radius: 7px; background: #17344d; color: #fff; padding: 11px 15px; font-size: 11px; opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .2s, transform .2s; }
 .toast.is-visible { opacity: 1; transform: translateY(0); }
 
+.auth-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f7f6f2; }
+.auth-card { width: min(420px, 100%); padding: 38px; border: 1px solid #e8e6e0; border-radius: 12px; background: #fff; box-shadow: 0 18px 50px rgba(20,38,54,.07); }
+.auth-card .brand-icon { display: block; width: 68px; height: 68px; object-fit: contain; margin-bottom: 20px; }
+.auth-card h1 { margin: 5px 0 12px; font: 400 30px/1.25 "Marcellus", Georgia, serif; color: #183147; }
+.auth-card p:not(.section-kicker) { margin: 0 0 21px; color: #73828d; font-size: 13px; line-height: 1.6; }
+.auth-card [role="alert"] { color: #9b463f; }
+.auth-card .primary-button, .auth-card .secondary-button { margin-top: 4px; }
+.auth-app { min-height: 100vh; }
+.auth-logout { padding: 7px 9px; }
+
 @media (max-width: 900px) {
   .container { width: min(100% - 40px, 1160px); }
   .brand { min-width: 230px; }.brand-icon { width: 62px; height: 62px; }.brand-name { font-size: 27px; }

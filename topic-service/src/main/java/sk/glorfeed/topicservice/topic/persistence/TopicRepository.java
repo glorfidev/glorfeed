@@ -9,5 +9,7 @@ import java.util.UUID;
 
 public interface TopicRepository extends JpaRepository<Topic, UUID> {
 
-    List<Topic> findAllByOrderByCreatedAtDesc();
+    List<Topic> findAllByOwnerIdOrderByCreatedAtDesc(String ownerId);
+
+    java.util.Optional<Topic> findByIdAndOwnerId(UUID id, String ownerId);
 }

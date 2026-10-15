@@ -1,3 +1,5 @@
+import { AuthenticationRequiredError } from "./auth";
+
 export interface Topic {
   id: string;
   name: string;
@@ -10,13 +12,25 @@ export interface TopicInput {
   description: string;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export type AccessTokenProvider = () => Promise<string>;
+
+async function request<T>(path: string, getAccessToken: AccessTokenProvider, init?: RequestInit): Promise<T> {
+  let token: string;
+  try {
+    token = await getAccessToken();
+  } catch {
+    throw new AuthenticationRequiredError();
+  }
+  const headers = new Headers(init?.headers);
+  headers.set("Authorization", `Bearer ${token}`);
   let response: Response;
   try {
-    response = await fetch(path, init);
+    response = await fetch(path, { ...init, headers });
   } catch {
     throw new Error("Could not reach the topic service. Check your connection and try again.");
   }
+
+  if (response.status === 401) throw new AuthenticationRequiredError();
 
   if (!response.ok) {
     const message = response.status === 400
@@ -36,26 +50,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
-export function getTopics(): Promise<Topic[]> {
-  return request<Topic[]>("/api/topics");
+export function getTopics(getAccessToken: AccessTokenProvider): Promise<Topic[]> {
+  return request<Topic[]>("/api/topics", getAccessToken);
 }
 
-export function createTopic(input: TopicInput): Promise<Topic> {
-  return request<Topic>("/api/topics", {
+export function createTopic(input: TopicInput, getAccessToken: AccessTokenProvider): Promise<Topic> {
+  return request<Topic>("/api/topics", getAccessToken, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
 
-export function updateTopic(id: string, input: TopicInput): Promise<Topic> {
-  return request<Topic>(`/api/topics/${encodeURIComponent(id)}`, {
+export function updateTopic(id: string, input: TopicInput, getAccessToken: AccessTokenProvider): Promise<Topic> {
+  return request<Topic>(`/api/topics/${encodeURIComponent(id)}`, getAccessToken, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
 }
 
-export function deleteTopic(id: string): Promise<void> {
-  return request<void>(`/api/topics/${encodeURIComponent(id)}`, { method: "DELETE" });
+export function deleteTopic(id: string, getAccessToken: AccessTokenProvider): Promise<void> {
+  return request<void>(`/api/topics/${encodeURIComponent(id)}`, getAccessToken, { method: "DELETE" });
 }
