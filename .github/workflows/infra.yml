@@ -1,12 +1,7 @@
 name: Deploy Infra
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'infra/prod/**'
-      - '.github/workflows/infra.yml'
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
@@ -45,5 +40,6 @@ jobs:
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           cd /opt/glorfeed/infra/prod
+          docker compose up -d --wait postgres
           docker compose up -d
           docker compose up -d --force-recreate --no-deps caddy
