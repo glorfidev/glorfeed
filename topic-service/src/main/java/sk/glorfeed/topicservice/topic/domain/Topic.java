@@ -12,6 +12,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -38,6 +39,10 @@ public class Topic {
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String description;
+
+    @Setter(AccessLevel.NONE)
+    @Column(name = "owner_id", updatable = false, length = 255)
+    private String ownerId;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default

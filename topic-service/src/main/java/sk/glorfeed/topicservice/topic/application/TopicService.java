@@ -30,19 +30,19 @@ public class TopicService {
     }
 
     @Transactional(readOnly = true)
-    public List<TopicDto> getTopics() {
-        return topicRepository.findAllByOrderByCreatedAtDesc().stream()
+    public List<TopicDto> getTopics(String ownerId) {
+        return topicRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId).stream()
             .map(this::toDto)
             .toList();
     }
 
     @Transactional(readOnly = true)
-    public TopicDto getTopic(UUID topicId) {
-        return toDto(findTopic(topicId));
+    public TopicDto getTopic(UUID topicId, String ownerId) {
+        return toDto(findTopic(topicId, ownerId));
     }
 
-    public TopicDto createTopic(CreateTopicDto createTopicDto) {
-        Topic topic = Topic.builder().name(createTopicDto.name()).description(createTopicDto.description()).build();
+    public TopicDto createTopic(CreateTopicDto createTopicDto, String ownerId) {
+        Topic topic = Topic.builder().name(createTopicDto.name()).description(createTopicDto.description()).ownerId(ownerId).build();
         Topic savedTopic = topicRepository.save(topic);
 
         outboxEventRepository.save(OutboxEvent.builder()
@@ -59,8 +59,8 @@ public class TopicService {
         return toDto(savedTopic);
     }
 
-    public TopicDto updateTopic(UUID topicId, UpdateTopicDto updateTopicDto) {
-        Topic topic = findTopic(topicId);
+    public TopicDto updateTopic(UUID topicId, UpdateTopicDto updateTopicDto, String ownerId) {
+        Topic topic = findTopic(topicId, ownerId);
 
         topic.setName(updateTopicDto.name());
         topic.setDescription(updateTopicDto.description());
@@ -69,12 +69,12 @@ public class TopicService {
         return toDto(topic);
     }
 
-    public void deleteTopic(UUID topicId) {
-        topicRepository.delete(findTopic(topicId));
+    public void deleteTopic(UUID topicId, String ownerId) {
+        topicRepository.delete(findTopic(topicId, ownerId));
     }
 
-    private Topic findTopic(UUID topicId) {
-        return topicRepository.findById(topicId)
+    private Topic findTopic(UUID topicId, String ownerId) {
+        return topicRepository.findByIdAndOwnerId(topicId, ownerId)
             .orElseThrow(() -> new TopicNotFoundException(topicId));
     }
 

@@ -27,6 +27,10 @@ services:
   frontend:
     image: ghcr.io/glorfidev/glorfeed-frontend:latest
     restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-https://auth.glorfindela.dev}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-glorfeed}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-glorfeed-frontend}
     networks:
       - web
 
@@ -37,6 +41,9 @@ services:
       TOPIC_DB_URL: jdbc:postgresql://postgres:5432/glorfeed_topic
       TOPIC_DB_USER: ${TOPIC_DB_USER:?Set TOPIC_DB_USER in the server .env file}
       TOPIC_DB_PASSWORD: ${TOPIC_DB_PASSWORD:?Set TOPIC_DB_PASSWORD in the server .env file}
+      AUTH_ISSUER_URI: ${AUTH_ISSUER_URI:-https://auth.glorfindela.dev/realms/glorfeed}
+      AUTH_JWK_SET_URI: ${AUTH_JWK_SET_URI:-https://auth.glorfindela.dev/realms/glorfeed/protocol/openid-connect/certs}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:-glorfeed-topic-service}
     depends_on:
       postgres:
         condition: service_healthy

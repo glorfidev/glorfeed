@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.util.List;
 import java.util.UUID;
@@ -36,7 +38,7 @@ public interface TopicApi {
         responses = @ApiResponse(responseCode = "200", description = "Topics retrieved")
     )
     @GetMapping
-    List<TopicDto> getTopics();
+    List<TopicDto> getTopics(@AuthenticationPrincipal Jwt jwt);
 
     @Operation(
         operationId = "getTopic",
@@ -49,7 +51,8 @@ public interface TopicApi {
     )
     @GetMapping("/{topicId}")
     TopicDto getTopic(
-        @PathVariable @Parameter(description = "ID of the topic to retrieve", required = true) UUID topicId
+        @PathVariable @Parameter(description = "ID of the topic to retrieve", required = true) UUID topicId,
+        @AuthenticationPrincipal Jwt jwt
     );
 
     @Operation(
@@ -63,7 +66,7 @@ public interface TopicApi {
     )
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping
-    TopicDto createTopic(@Valid @RequestBody CreateTopicDto createTopicDto);
+    TopicDto createTopic(@Valid @RequestBody CreateTopicDto createTopicDto, @AuthenticationPrincipal Jwt jwt);
 
     @Operation(
         operationId = "updateTopic",
@@ -78,7 +81,8 @@ public interface TopicApi {
     @PutMapping("/{topicId}")
     TopicDto updateTopic(
         @PathVariable @Parameter(description = "ID of the topic to update", required = true) UUID topicId,
-        @Valid @RequestBody UpdateTopicDto updateTopicDto
+        @Valid @RequestBody UpdateTopicDto updateTopicDto,
+        @AuthenticationPrincipal Jwt jwt
     );
 
     @Operation(
@@ -93,6 +97,7 @@ public interface TopicApi {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/{topicId}")
     void deleteTopic(
-        @PathVariable @Parameter(description = "ID of the topic to delete", required = true) UUID topicId
+        @PathVariable @Parameter(description = "ID of the topic to delete", required = true) UUID topicId,
+        @AuthenticationPrincipal Jwt jwt
     );
 }

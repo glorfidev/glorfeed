@@ -9,6 +9,16 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:https://auth.glorfindela.dev/realms/glorfeed}
+
+app:
+  security:
+    jwk-set-uri: ${AUTH_JWK_SET_URI:https://auth.glorfindela.dev/realms/glorfeed/protocol/openid-connect/certs}
+    audience: ${AUTH_AUDIENCE:glorfeed-topic-service}
 
 logging:
   config: classpath:logging/logback-spring.xml

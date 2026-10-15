@@ -2,6 +2,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import App from "./App";
 import type { Topic } from "./topicApi";
+import { AuthContext } from "./auth";
+import type { AuthContextValue } from "./auth";
 
 const existingTopic: Topic = {
   id: "topic-1",
@@ -19,6 +21,18 @@ const addedTopic: Topic = {
 
 function response(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
+}
+
+const authValue: AuthContextValue = {
+  subject: "user-1",
+  displayName: "Mario",
+  getAccessToken: vi.fn(async () => "test-access-token"),
+  logout: vi.fn(),
+  expireSession: vi.fn(),
+};
+
+function renderApp() {
+  return render(<AuthContext.Provider value={authValue}><App /></AuthContext.Provider>);
 }
 
 function noContent() {
@@ -68,13 +82,22 @@ afterEach(() => {
 });
 
 describe("live topic management", () => {
+  it("expires the UI after one unauthorized topic response without replay", async () => {
+    const expireSession = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(response({ message: "expired" }, 401));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AuthContext.Provider value={{ ...authValue, expireSession }}><App /></AuthContext.Provider>);
+    await waitFor(() => expect(expireSession).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("shows the initial load failure and retries the list", async () => {
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(new TypeError("offline"))
       .mockResolvedValueOnce(response([existingTopic]));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    renderApp();
     openTopics();
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach the topic service");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -108,16 +131,20 @@ describe("live topic management", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    renderApp();
     openTopics();
     expect(await screen.findByRole("heading", { name: "Climate policy" })).toBeInTheDocument();
 
     openAddDialog();
     enterTopic("Urban forests", "Research on urban canopy.");
+    const topicDialog = document.querySelector(".topic-dialog");
+    expect(topicDialog).not.toBeNull();
     submitTopic("Add topic");
     expect(await screen.findByRole("heading", { name: "Urban forests" })).toBeInTheDocument();
+    await waitFor(() => expect(topicDialog).not.toHaveAttribute("open"));
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Climate policy" }));
+    await waitFor(() => expect(topicDialog).toHaveAttribute("open"));
     enterTopic("Climate action", "Updated policy research.");
     submitTopic("Save changes");
     expect(await screen.findByRole("heading", { name: "Climate action" })).toBeInTheDocument();
@@ -147,7 +174,7 @@ describe("live topic management", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(window, "confirm").mockReturnValue(false);
 
-    render(<App />);
+    renderApp();
     openTopics();
     expect(await screen.findByRole("heading", { name: "Climate policy" })).toBeInTheDocument();
 
@@ -174,7 +201,7 @@ describe("live topic management", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
-    render(<App />);
+    renderApp();
     expect(await screen.findByText("Live topic")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "PostgreSQL logical replication, in plain language" })).toBeInTheDocument();
     expect(screen.getByText("Climate & energy")).toBeInTheDocument();
@@ -196,7 +223,7 @@ describe("live topic management", () => {
       .mockResolvedValueOnce(response([existingTopic, addedTopic]));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    renderApp();
     openTopics();
     expect(screen.getByText("Loading topics…")).toBeInTheDocument();
     openAddDialog();
@@ -221,7 +248,7 @@ describe("live topic management", () => {
       .mockResolvedValueOnce(response([addedTopic]));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    renderApp();
     openAddDialog();
     enterTopic(addedTopic.name, addedTopic.description);
     const dialog = screen.getByRole("dialog");
