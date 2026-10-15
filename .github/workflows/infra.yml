@@ -30,8 +30,7 @@ jobs:
       - name: Check deployment dependencies
         run: |
           set -euo pipefail
-          command -v curl >/dev/null || { echo "Install curl on the production runner before deployment." >&2; exit 1; }
-          command -v jq >/dev/null || { echo "Install jq on the production runner before deployment." >&2; exit 1; }
+          command -v python3 >/dev/null || { echo "Install Python 3 on the production runner before deployment." >&2; exit 1; }
 
       - name: Install deployment files
         run: |
@@ -42,7 +41,7 @@ jobs:
           install -d /opt/glorfeed/infra/prod/postgres/init
           install -m 755 infra/prod/postgres/init/01-create-service-databases.sh /opt/glorfeed/infra/prod/postgres/init/01-create-service-databases.sh
           install -m 755 infra/prod/provision-cdc.sh /opt/glorfeed/infra/prod/provision-cdc.sh
-          install -m 755 infra/prod/register-connectors.sh /opt/glorfeed/infra/prod/register-connectors.sh
+          install -m 755 infra/prod/register_connectors.py /opt/glorfeed/infra/prod/register_connectors.py
           install -d /opt/glorfeed/infra/prod/connectors
           install -m 644 infra/prod/connectors/topic-outbox.json /opt/glorfeed/infra/prod/connectors/topic-outbox.json
           install -m 644 infra/prod/connectors/research-outbox.json /opt/glorfeed/infra/prod/connectors/research-outbox.json
@@ -97,7 +96,7 @@ jobs:
           . ./.env
           set +a
           ./provision-cdc.sh
-          ./register-connectors.sh
+          python3 ./register_connectors.py
 
       - name: Refresh Caddy configuration
         run: |
