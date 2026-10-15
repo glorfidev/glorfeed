@@ -1,6 +1,12 @@
 # Glorfeed production infrastructure
 
-This Compose stack runs the frontend, topic-service, research-service, Caddy, PostgreSQL, single-node Kafka, and Debezium Connect. Topic-service and research-service each have a separate database and application login inside PostgreSQL. Each database also has its own restricted CDC login. Kafka and Connect have no public listener; Connect's REST API is published only on server loopback at `127.0.0.1:18083`. Caddy publishes ports 80 and 443. Application services, PostgreSQL, Kafka, and Connect use private Docker networks.
+This Compose stack runs the frontend, topic-service, research-service, Caddy, PostgreSQL, single-node Kafka, and Debezium Connect. Topic-service and research-service each have a separate database and application login inside PostgreSQL. Each database also has its own restricted CDC login. Kafka and Connect have no public listener; Connect's REST API is published only on server loopback at `127.0.0.1:18083`, and PostgreSQL is published only on server loopback at `127.0.0.1:5432`. Caddy publishes ports 80 and 443. Application services, PostgreSQL, Kafka, and Connect use private Docker networks.
+
+## Connect IntelliJ to the research database
+
+First deploy the loopback port mapping through the existing **Deploy Infra** workflow on `main`. Compose briefly recreates the PostgreSQL container when applying this change; its named data volume is preserved. No firewall rule for port 5432 is needed because PostgreSQL listens on server loopback only.
+
+In IntelliJ's PostgreSQL data source, set **General** to host `127.0.0.1`, port `5432`, database `glorfeed_research`, and the exact `RESEARCH_DB_USER` and `RESEARCH_DB_PASSWORD` values from the server's `.env`. In **SSH/SSL**, enable **Use SSH tunnel**, enter the server IP and the same SSH login account you use to access that server (use `root` only if that is your SSH account), and select the existing `~/.ssh/id_ed25519` key or your configured OpenSSH agent. To connect to `glorfeed_topic`, use `TOPIC_DB_USER` and `TOPIC_DB_PASSWORD` instead.
 
 Before the first deployment:
 

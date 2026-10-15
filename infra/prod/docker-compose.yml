@@ -2,6 +2,9 @@ services:
   postgres:
     image: postgres:18.1
     restart: unless-stopped
+    # Host-loopback only for SSH-tunneled administration; never publish publicly.
+    ports:
+      - "127.0.0.1:5432:5432"
     # Debezium will read outbox inserts through logical decoding.
     command: ["postgres", "-c", "wal_level=logical", "-c", "max_slot_wal_keep_size=1024MB"]
     environment:
