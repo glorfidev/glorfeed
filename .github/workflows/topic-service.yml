@@ -1,4 +1,4 @@
-name: Build and Deploy Topic Service
+name: Build Services and Deploy Infra
 
 on:
   push:
@@ -6,7 +6,9 @@ on:
       - main
     paths:
       - 'topic-service/**'
+      - 'research-service/**'
       - ".github/workflows/topic-service.yml"
+      - '.github/workflows/build-service-image.yml'
       - 'infra/prod/**'
       - '.github/workflows/infra.yml'
   workflow_dispatch:
@@ -22,41 +24,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+  build-topic-service:
     permissions:
       contents: read
       packages: write
-    steps:
-      - name: Check out source code
-        uses: actions/checkout@v4
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      context: ./topic-service
+      image-name: glorfeed-topic-service
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to Github Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push topic service image
-        uses: docker/build-push-action@v7
-        with:
-          context: ./topic-service
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/glorfeed-topic-service:latest
-            ghcr.io/${{ github.repository_owner }}/glorfeed-topic-service:${{ github.sha }}
+  build-research-service:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-service-image.yml
+    with:
+      context: ./research-service
+      image-name: glorfeed-research-service
 
   deploy:
-    needs: build
+    needs: [build-topic-service, build-research-service]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
     permissions:
       contents: read

@@ -2,7 +2,6 @@ name: Deploy Infra
 
 on:
   workflow_call:
-  workflow_dispatch:
 
 concurrency:
   group: glorfeed-production-deploy
@@ -29,6 +28,13 @@ jobs:
           install -m 644 infra/prod/Caddyfile /opt/glorfeed/infra/prod/Caddyfile
           install -d /opt/glorfeed/infra/prod/postgres/init
           install -m 755 infra/prod/postgres/init/01-create-service-databases.sh /opt/glorfeed/infra/prod/postgres/init/01-create-service-databases.sh
+          install -m 755 infra/prod/deploy.sh /opt/glorfeed/infra/prod/deploy.sh
+          install -m 755 infra/prod/provision-cdc.sh /opt/glorfeed/infra/prod/provision-cdc.sh
+          install -m 755 infra/prod/register_connectors.py /opt/glorfeed/infra/prod/register_connectors.py
+          install -m 755 infra/prod/smoke-crud-projection.py /opt/glorfeed/infra/prod/smoke-crud-projection.py
+          install -d /opt/glorfeed/infra/prod/connectors
+          install -m 644 infra/prod/connectors/topic-outbox.json /opt/glorfeed/infra/prod/connectors/topic-outbox.json
+          install -m 644 infra/prod/connectors/research-outbox.json /opt/glorfeed/infra/prod/connectors/research-outbox.json
 
       - name: Apply production configuration
         env:
@@ -40,5 +46,4 @@ jobs:
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           cd /opt/glorfeed/infra/prod
-          docker compose up -d
-          docker compose up -d --force-recreate --no-deps caddy
+          ./deploy.sh
