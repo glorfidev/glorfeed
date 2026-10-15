@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import { sampleStories, sampleTopics } from "./mockData";
 import type { SampleTopic, Story } from "./mockData";
-import { createTopic, deleteTopic, getTopics, updateTopic } from "./topicApi";
-import type { Topic, TopicInput } from "./topicApi";
+import { createTopic, deleteTopic, getTopics, researchTopic, updateTopic } from "./topicApi";
+import type { Topic, TopicInput, TopicResearchResult } from "./topicApi";
 import { AuthenticationRequiredError, useAuth } from "./auth";
 
 type View = "overview" | "topics" | "saved";
@@ -100,6 +100,21 @@ function createdDate(createdAt: string): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
+function safeHttpUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function ResearchReferences({ title, items }: { title: string; items: TopicResearchResult["citations"] }) {
+  const safeItems = Array.isArray(items) ? items.filter((item) => item && typeof item.title === "string" && typeof item.url === "string" && safeHttpUrl(item.url)) : [];
+  if (!safeItems.length) return null;
+  return <section className="research-references" aria-label={title}><h3>{title}</h3><ul>{safeItems.map((item, index) => <li key={`${item.url}-${index}`}><a href={safeHttpUrl(item.url)!} target="_blank" rel="noopener noreferrer">{item.title}</a></li>)}</ul></section>;
+}
+
 export default function App() {
   const auth = useAuth();
   const [view, setView] = useState<View>(viewFromHash);
@@ -116,11 +131,19 @@ export default function App() {
   const [stories, setStories] = useState(sampleStories);
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
   const [topicDialogOpen, setTopicDialogOpen] = useState(false);
+  const [researchDialogTopic, setResearchDialogTopic] = useState<Topic | null>(null);
+  const [researchPendingTopicId, setResearchPendingTopicId] = useState<string | null>(null);
+  const [researchError, setResearchError] = useState("");
+  const [researchResult, setResearchResult] = useState<TopicResearchResult | null>(null);
   const [toast, setToast] = useState("");
   const topicLoadRequest = useRef(0);
   const topicMutationRevision = useRef(0);
   const topicMutationInFlight = useRef(false);
   const topicDialog = useRef<HTMLDialogElement>(null);
+  const researchDialog = useRef<HTMLDialogElement>(null);
+  const researchRequestGeneration = useRef(0);
+  const researchInFlight = useRef(false);
+  const researchMounted = useRef(false);
   const storyDialog = useRef<HTMLDialogElement>(null);
   const topicName = useRef<HTMLInputElement>(null);
 
@@ -169,6 +192,24 @@ export default function App() {
   }, [topicDialogOpen]);
 
   useEffect(() => {
+    const dialog = researchDialog.current;
+    if (!dialog) return;
+    if (researchDialogTopic && !dialog.open) {
+      dialog.showModal();
+    } else if (!researchDialogTopic && dialog.open) {
+      dialog.close();
+    }
+  }, [researchDialogTopic]);
+
+  useEffect(() => {
+    researchMounted.current = true;
+    return () => {
+      researchMounted.current = false;
+      researchRequestGeneration.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
     const dialog = storyDialog.current;
     if (!dialog) return;
     if (selectedStoryId && !dialog.open) dialog.showModal();
@@ -213,6 +254,51 @@ export default function App() {
     setEditingTopic(null);
     setTopicForm({ name: "", description: "" });
     setTopicFormError("");
+  };
+
+  const openResearchDialog = (topic: Topic) => {
+    if (topicMutationInFlight.current || researchInFlight.current) return;
+    researchRequestGeneration.current += 1;
+    setResearchDialogTopic(topic);
+    setResearchError("");
+    setResearchResult(null);
+  };
+
+  const closeResearchDialog = () => {
+    if (researchInFlight.current) return;
+    researchRequestGeneration.current += 1;
+    setResearchDialogTopic(null);
+    setResearchError("");
+    setResearchResult(null);
+  };
+
+  const runResearch = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const topic = researchDialogTopic;
+    if (!topic || researchInFlight.current) return;
+
+    const generation = ++researchRequestGeneration.current;
+    const subject = auth.subject;
+    researchInFlight.current = true;
+    setResearchPendingTopicId(topic.id);
+    setResearchError("");
+    setResearchResult(null);
+    try {
+      const result = await researchTopic(topic.id, auth.getAccessToken);
+      if (researchMounted.current && generation === researchRequestGeneration.current && auth.subject === subject) {
+        setResearchResult(result);
+      }
+    } catch (error) {
+      if (!researchMounted.current || generation !== researchRequestGeneration.current || auth.subject !== subject) return;
+      if (error instanceof AuthenticationRequiredError) {
+        auth.expireSession();
+        return;
+      }
+      setResearchError(error instanceof Error ? error.message : "Research could not be completed. Check before running again.");
+    } finally {
+      if (generation === researchRequestGeneration.current) researchInFlight.current = false;
+      if (researchMounted.current && generation === researchRequestGeneration.current) setResearchPendingTopicId(null);
+    }
   };
 
   const beginTopicMutation = (key: string): boolean => {
@@ -381,7 +467,7 @@ export default function App() {
                 <button className="topic-action-button is-danger" type="button" onClick={() => void removeTopic(topic)} disabled={topicMutationPending !== null} aria-label={topicMutationPending === topic.id ? `Deleting ${topic.name}` : `Delete ${topic.name}`}><Icon name="trash" /></button>
               </div></div>
               <h2>{topic.name}</h2><p>{topic.description}</p>
-              <div className="topic-card-footer">Added {createdDate(topic.createdAt)}</div>
+              <div className="topic-card-footer"><span>Added {createdDate(topic.createdAt)}</span><button className="text-button topic-research-button" type="button" onClick={() => openResearchDialog(topic)} disabled={topicMutationPending !== null || researchPendingTopicId !== null}>Run research</button></div>
             </article>)}
           </div>
         </section>}
@@ -403,6 +489,27 @@ export default function App() {
           <label className="form-label" htmlFor="topic-description">Description</label><textarea className="form-input" id="topic-description" name="topicDescription" value={topicForm.description} onChange={(event) => { setTopicForm((current) => ({ ...current, description: event.target.value })); setTopicFormError(""); }} maxLength={10_000} rows={3} placeholder="The angle you'd like to follow..." required disabled={topicMutationPending !== null} />
           {topicFormError && <p className="form-error" role="alert">{topicFormError}</p>}
           <div className="dialog-actions"><button className="secondary-button" type="button" onClick={closeTopicDialog} disabled={topicMutationPending !== null}>Cancel</button><button className="primary-button" type="submit" disabled={topicMutationPending !== null}>{topicMutationPending !== null ? "Saving…" : editingTopic ? "Save changes" : "Add topic"} <Icon name="arrow" /></button></div>
+        </form>
+      </dialog>
+
+      <dialog className="topic-dialog research-dialog" ref={researchDialog} aria-labelledby="research-dialog-title" onClose={() => {
+        if (researchDialogTopic && !researchInFlight.current) closeResearchDialog();
+      }} onCancel={(event) => {
+        event.preventDefault();
+        if (!researchInFlight.current) closeResearchDialog();
+      }}>
+        <form onSubmit={runResearch}>
+          <div className="dialog-top"><div><p className="section-kicker">ON-DEMAND RESEARCH</p><h2 id="research-dialog-title">Research {researchDialogTopic?.name ?? "topic"}</h2></div><button type="button" className="icon-button" onClick={closeResearchDialog} disabled={researchInFlight.current} aria-label="Close research dialog"><Icon name="close" /></button></div>
+          <p className="dialog-description">This sends one paid AI web-search request for the topic. No request is sent until you choose Run research, and requests are not automatically retried.</p>
+          {researchPendingTopicId && <p className="research-status" role="status">Research is running. Keep this dialog open while the service responds.</p>}
+          {researchError && <p className="form-error" role="alert">{researchError}</p>}
+          {researchResult && <section className="research-result" aria-label="Research report">
+            <p className="research-result-meta">{researchResult.model} · {researchResult.inputTokens} input tokens · {researchResult.outputTokens} output tokens · {researchResult.webSearchCalls} web searches</p>
+            <div className="research-report-text">{typeof researchResult.text === "string" ? researchResult.text : "Research response text is unavailable."}</div>
+            <ResearchReferences title="Citations" items={researchResult.citations} />
+            <ResearchReferences title="Sources" items={researchResult.sources} />
+          </section>}
+          <div className="dialog-actions"><button className="secondary-button" type="button" onClick={closeResearchDialog} disabled={researchInFlight.current}>Cancel</button><button className="primary-button" type="submit" disabled={researchPendingTopicId !== null || !researchDialogTopic}>{researchPendingTopicId ? "Researching…" : "Run research"} <Icon name="arrow" /></button></div>
         </form>
       </dialog>
 

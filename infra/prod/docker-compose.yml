@@ -51,6 +51,9 @@ services:
       AUTH_ISSUER_URI: ${AUTH_ISSUER_URI:-https://auth.glorfindela.dev/realms/glorfeed}
       AUTH_JWK_SET_URI: ${AUTH_JWK_SET_URI:-https://auth.glorfindela.dev/realms/glorfeed/protocol/openid-connect/certs}
       AUTH_AUDIENCE: ${AUTH_AUDIENCE:-glorfeed-topic-service}
+      RESEARCH_GATEWAY_ENABLED: ${RESEARCH_GATEWAY_ENABLED:-false}
+      RESEARCH_INTERNAL_TOKEN: ${RESEARCH_INTERNAL_TOKEN:-}
+      RESEARCH_SERVICE_URL: http://research-service:8080
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,6 +75,9 @@ services:
       SERVER_ADDRESS: 0.0.0.0
       RESEARCH_MANUAL_API_ENABLED: "false"
       RESEARCH_AI_MODEL: ${RESEARCH_AI_MODEL:-gpt-6-luna}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RESEARCH_GATEWAY_ENABLED: ${RESEARCH_GATEWAY_ENABLED:-false}
+      RESEARCH_INTERNAL_TOKEN: ${RESEARCH_INTERNAL_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy

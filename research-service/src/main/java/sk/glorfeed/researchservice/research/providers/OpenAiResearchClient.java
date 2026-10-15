@@ -9,6 +9,7 @@ import java.util.Map;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.errors.OpenAIException;
+import com.openai.errors.UnauthorizedException;
 import com.openai.models.Reasoning;
 import com.openai.models.ReasoningEffort;
 import com.openai.models.responses.Response;
@@ -88,8 +89,11 @@ public class OpenAiResearchClient {
 
         try {
             return parseReport(subject, client.responses().create(params));
-        } catch (OpenAIException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OpenAI research request failed", e);
+        } catch (UnauthorizedException exception) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Configured OpenAI API key was rejected");
+        } catch (OpenAIException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "OpenAI research request failed");
         }
     }
 
