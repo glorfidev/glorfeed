@@ -71,3 +71,5 @@ unset ACCESS_TOKEN
 ```
 
 The script creates a temporary topic through the authenticated API, verifies list/get, updates it, polls the research database until create and update are projected, deletes it, and confirms the projection row disappears. It never prints or persists the token and never calls the paid research endpoint. `API_BASE_URL` and `PROJECTION_TIMEOUT_SECONDS` may override defaults. Confirm anonymous topic API requests return 401 and the frontend loads at the domain root as separate checks.
+
+The smoke client sends `Accept: application/json` and identifies itself as `Glorfeed-Pipeline-Smoke/1.0`; it does not impersonate a browser. If Cloudflare still returns error 1010, that response reflects the site owner’s browser-integrity/security policy and may require reviewing that policy; the client identity does not guarantee acceptance ([Cloudflare error 1010](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/)).

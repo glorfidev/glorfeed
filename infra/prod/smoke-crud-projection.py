@@ -15,6 +15,7 @@ import uuid
 BASE_URL = os.environ.get("API_BASE_URL", "https://feed.glorfindela.dev").rstrip("/")
 TOKEN = os.environ.get("ACCESS_TOKEN", "")
 POLL_SECONDS = int(os.environ.get("PROJECTION_TIMEOUT_SECONDS", "90"))
+USER_AGENT = "Glorfeed-Pipeline-Smoke/1.0"
 
 
 def api(method: str, path: str, payload=None):
@@ -25,7 +26,9 @@ def api(method: str, path: str, payload=None):
         method=method,
         headers={
             "Authorization": f"Bearer {TOKEN}",
+            "Accept": "application/json",
             "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
         },
     )
     with urllib.request.urlopen(request, timeout=15) as response:
