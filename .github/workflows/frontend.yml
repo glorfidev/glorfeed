@@ -8,6 +8,12 @@ on:
       - 'frontend/**'
       - '.github/workflows/frontend.yml'
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy after building (disable to publish the image only)
+        type: boolean
+        required: true
+        default: true
 
 concurrency:
   group: glorfeed-frontend-build
@@ -46,10 +52,12 @@ jobs:
 
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
     runs-on: [self-hosted, Linux, ARM64, glorfeed-prod]
     concurrency:
       group: glorfeed-production-deploy
       cancel-in-progress: false
+      queue: max
     permissions:
       contents: read
       packages: read
