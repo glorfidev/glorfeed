@@ -30,3 +30,6 @@ research:
   ai:
     manual-enabled: ${RESEARCH_MANUAL_API_ENABLED:false}
     model: ${RESEARCH_AI_MODEL:gpt-6-luna}
+  gateway:
+    enabled: ${RESEARCH_GATEWAY_ENABLED:false}
+    internal-token: ${RESEARCH_INTERNAL_TOKEN:}

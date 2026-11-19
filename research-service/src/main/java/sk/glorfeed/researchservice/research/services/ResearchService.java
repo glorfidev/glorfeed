@@ -1,6 +1,7 @@
 package sk.glorfeed.researchservice.research.services;
 
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,7 @@ public class ResearchService {
     private final ResearchTopicRepository topicRepository;
     private final OpenAiResearchClient researchClient;
     private final ResearchRunRecorder runRecorder;
+    private final Semaphore runSlot = new Semaphore(1);
 
     public ResearchService(ResearchTopicRepository topicRepository, OpenAiResearchClient researchClient,
                            ResearchRunRecorder runRecorder) {
@@ -32,6 +34,18 @@ public class ResearchService {
 
     public ResearchReport researchTopic(UUID topicId) {
         log.info("Starting manual research for topicId={}", topicId);
+        if (!runSlot.tryAcquire()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Another manual research run is in progress");
+        }
+
+        try {
+            return runResearch(topicId);
+        } finally {
+            runSlot.release();
+        }
+    }
+
+    private ResearchReport runResearch(UUID topicId) {
         ResearchTopic topic = topicRepository.findById(topicId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Research topic not found"));
         ResearchSubject subject = new ResearchSubject(topic.getId(), topic.getName(), topic.getDescription());

@@ -20,6 +20,12 @@ app:
     jwk-set-uri: ${AUTH_JWK_SET_URI:https://auth.glorfindela.dev/realms/glorfeed/protocol/openid-connect/certs}
     audience: ${AUTH_AUDIENCE:glorfeed-topic-service}
 
+research:
+  gateway:
+    enabled: ${RESEARCH_GATEWAY_ENABLED:false}
+    internal-token: ${RESEARCH_INTERNAL_TOKEN:}
+    base-url: ${RESEARCH_SERVICE_URL:http://research-service:8080}
+
 logging:
   config: classpath:logging/logback-spring.xml
   graylog:
